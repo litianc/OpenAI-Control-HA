@@ -9,7 +9,7 @@
 
 </h1>
 
-| :warning: This integration is a work in progress and only controls lights. |
+| :warning: 原作者只支持light，我这里调整为支持所有不带service_data的操作，时间原因没有做调光调色和空调温度设置等操作（带service_data的操作）|
 | --- |
 
 # About
