@@ -36,7 +36,10 @@ Currently, this integration only supports OpenAI but can be used as a base to in
 
 1. From "Integrations" click on the three dots in the top right corner and click "Custom reponsitories".
 
-1. Paste in the GitHub link to this repository, [https://github.com/alanjames1987/OpenAI-Control-HA](https://github.com/alanjames1987/OpenAI-Control-HA) and select "Integration" as the category.
+1. Paste in the GitHub link to this repository,
+   原作者： [https://github.com/alanjames1987/OpenAI-Control-HA](https://github.com/alanjames1987/OpenAI-Control-HA)
+   c1pher改版： [https://github.com/c1pher-cn/OpenAI-Control-HA](https://github.com/c1pher-cn/OpenAI-Control-HA)
+   and select "Integration" as the category.
 
 1. Click add and the integration will be added to HACS.
 
