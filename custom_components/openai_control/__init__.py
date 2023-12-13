@@ -13,12 +13,13 @@ from string import Template
 import openai
 from openai import error
 
+from homeassistant.components.homeassistant.exposed_entities import async_should_expose
 from homeassistant.components import conversation
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_API_KEY, MATCH_ALL
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryNotReady, TemplateError
-from homeassistant.helpers import intent, template, entity_registry
+from homeassistant.helpers import intent, template, entity_registry,area_registry
 from homeassistant.util import ulid
 
 from .const import (
@@ -111,9 +112,11 @@ class OpenAIAgent(conversation.AbstractConversationAgent):
 
         # check if the conversation is continuing or new
 
+
+        exposed_entities = self.get_exposed_entities()
         # generate the prompt to be added to the sending messages later
         try:
-            prompt = self._async_generate_prompt(raw_prompt)
+            prompt = self._async_generate_prompt(raw_prompt,exposed_entities)
         except TemplateError as err:
 
             _LOGGER.error("Error rendering prompt: %s", err)
@@ -128,59 +131,27 @@ class OpenAIAgent(conversation.AbstractConversationAgent):
             )
 
         # if continuing then get the messages from the conversation history
+        #历史对话
         if user_input.conversation_id in self.history:
             conversation_id = user_input.conversation_id
             messages = self.history[conversation_id]
+
         # if new then create a new conversation history
+        #新建对话
         else:
             conversation_id = ulid.ulid()
             # add the conversation starter to the begining of the conversation
             # this is to give the assistant more personality
             messages = [{"role": "system", "content": prompt}]
+            #这里的content是从raw_prompt 也就是options里设置的指令
 
-        """ Entities """
 
-        # Get all entities exposed to the Conversation Assistant
-        # NOTE: for the first release only lights are supported
 
-        registry = entity_registry.async_get(self.hass)
-        entity_ids = self.hass.states.async_entity_ids('light')
+         #prompt模版渲染，里面有设备信息和用户在组建中配置的prompt
+        messages.append({"role": "user", "content": user_input.text}) #用户输入的聊天信息
 
-        entities_template = ''
 
-        for entity_id in entity_ids:
-            # get entities from the registry
-            # to determine if they are exposed to the Conversation Assistant
-            # registry entries have the propert "options['conversation']['should_expose']"
-            entity = registry.entities.get(entity_id)
-
-            if entity.options['conversation']['should_expose'] is not True:
-                continue
-
-            # get the status string
-            status_object = self.hass.states.get(entity_id)
-            status_string = status_object.state
-
-            # TODO: change this to dynamic call once more than lights are supported
-            services = ['toggle', 'turn_off', 'turn_on']
-
-            # append the entitites tempalte
-            entities_template += entity_template.substitute(
-                id=entity_id,
-                name=entity.name or entity_id,
-                status=status_string or "unknown",
-                action=','.join(services),
-            )
-
-        # generate the prompt using the prompt_template
-        prompt_render = prompt_template.substitute(
-            entities=entities_template,
-            prompt=user_input.text
-        )
-
-        messages.append({"role": "user", "content": prompt_render})
-
-        _LOGGER.debug("Prompt for %s: %s", model, messages)
+        _LOGGER.info("Prompt for %s: %s", model, messages)
 
         """ OpenAI Call """
 
@@ -193,7 +164,7 @@ class OpenAIAgent(conversation.AbstractConversationAgent):
         # sending only the system role message and the current user message
         sending_messages = [
             {"role": "system", "content": prompt},
-            {"role": "user", "content": prompt_render}
+            {"role": "user", "content": user_input.text}
         ]
 
         # call OpenAI
@@ -222,7 +193,7 @@ class OpenAIAgent(conversation.AbstractConversationAgent):
         # this will be changed if a better reply is found
         reply = content
 
-        _LOGGER.debug("Response for %s: %s", model, content)
+        _LOGGER.info("Response for %s: %s", model, content)
 
         json_response = None
 
@@ -247,6 +218,7 @@ class OpenAIAgent(conversation.AbstractConversationAgent):
                 _LOGGER.error('Error on second parsing of JSON message from OpenAI %s', err)
         else:
             _LOGGER.error('Error on second extraction of JSON message from OpenAI, %s', content)
+        _LOGGER.error('message from OpenAI, %s', content)
 
         # only operate on JSON actions if JSON was extracted
         if json_response is not None:
@@ -255,10 +227,12 @@ class OpenAIAgent(conversation.AbstractConversationAgent):
 
             try:
                 for entity in json_response["entities"]:
+                    device,domain = entity['entity_id'].split('.')
                     # TODO: make this support more than just lights
-                    await self.hass.services.async_call('light', entity['action'], {'entity_id': entity['id']})
-                    _LOGGER.debug('ACTION: %s', entity['action'])
-                    _LOGGER.debug('ID: %s', entity['id'])
+                    #await self.hass.services.async_call(device, entity['action'], {'entity_id': entity['entity_id'],'service_data': entity['service_data']})
+                    await self.hass.services.async_call(device, entity['action'], {'entity_id': entity['entity_id']})
+                    _LOGGER.error('ACTION: %s', entity['action'])
+                    _LOGGER.error('ID: %s', entity['entity_id'])
             except KeyError as err:
                 _LOGGER.warn('No entities detected for prompt %s', user_input.text)
 
@@ -278,6 +252,7 @@ class OpenAIAgent(conversation.AbstractConversationAgent):
                 )
 
         messages.append(reply)
+        #messages.append(result["choices"][0]["message"])
         self.history[conversation_id] = messages
 
         intent_response = intent.IntentResponse(language=user_input.language)
@@ -286,11 +261,81 @@ class OpenAIAgent(conversation.AbstractConversationAgent):
             response=intent_response, conversation_id=conversation_id
         )
 
-    def _async_generate_prompt(self, raw_prompt: str) -> str:
+    def _async_generate_prompt(self, raw_prompt: str, exposed_entities) -> str:
         """Generate a prompt for the user."""
         return template.Template(raw_prompt, self.hass).async_render(
             {
                 "ha_name": self.hass.config.location_name,
+                "exposed_entities": exposed_entities,
             },
             parse_result=False,
         )
+
+    def get_exposed_entities(self):
+        states = [
+            state
+            for state in self.hass.states.async_all()
+            if async_should_expose(self.hass, conversation.DOMAIN, state.entity_id)
+        ]
+        registry = entity_registry.async_get(self.hass)
+        exposed_entities = []
+        '''
+        方法1
+        areas = area_registry.async_list_areas()
+        for area in areas:
+            entities = []
+            entities = await self.hass.states.async_select_area(area)
+            for entity in entities:
+                entities.append(
+                {
+                    "entity_id": entity.entity_id,
+                    "name": entity.friendly_name,
+                    "state": self.hass.states.get(entity.entity_id).state,
+                    "aliases": entity.aliases,
+                }
+                )
+            exposed_entities.append(
+            {
+                "area_name":area,
+                "entities",entities
+            })
+
+        方法2
+        areas = self.hass.async_list_areas()
+        for area in areas:
+            entities = []
+            for state in states:
+            if 'area_name' in state.context:
+
+                exposed_entities.append((state.entity_id, state.context.area_name))
+
+        方法3
+        area_reg = area_registry.async_get(hass)
+        return [area.id for area in area_reg.async_list_areas()]
+
+        area_reg.async_list_areas()
+        if area := area_reg.async_get_area(area_id)
+            area.name
+        area_name()
+
+        exposed_entities = []
+
+
+        '''
+        for state in states:
+            entity_id = state.entity_id
+            entity = registry.entities.get(entity_id)
+
+            aliases = []
+            if entity and entity.aliases:
+                aliases = entity.aliases
+
+            exposed_entities.append(
+                {
+                    "entity_id": entity_id,
+                    "name": state.name,
+                    "state": self.hass.states.get(entity_id).state,
+                    "aliases": aliases,
+                }
+            )
+        return exposed_entities
