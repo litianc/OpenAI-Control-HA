@@ -43,6 +43,10 @@ CONF_MAX_TOKENS = "max_tokens"
 DEFAULT_MAX_TOKENS = 250
 
 CONF_TOP_P = "top_p"
+
+CONF_BASE_URL = "base_url"
+DEFAULT_BASE_URL = "https://openai.litianc.cn/v1"
+DEFAULT_API_KEY = "sk-0000000000000000000"
 DEFAULT_TOP_P = 1
 
 CONF_TEMPERATURE = "temperature"
