@@ -28,11 +28,13 @@ from .const import (
     CONF_PROMPT,
     CONF_TEMPERATURE,
     CONF_TOP_P,
+    CONF_BASE_URL,
     DEFAULT_CHAT_MODEL,
     DEFAULT_MAX_TOKENS,
     DEFAULT_PROMPT,
     DEFAULT_TEMPERATURE,
     DEFAULT_TOP_P,
+    DEFAULT_BASE_URL,
     ENTITY_TEMPLATE,
     PROMPT_TEMPLATE,
 )
@@ -45,6 +47,7 @@ prompt_template = Template(PROMPT_TEMPLATE)
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up OpenAI Agent from a config entry."""
     openai.api_key = entry.data[CONF_API_KEY]
+    openai.api_base = entry.data[CONF_BASE_URL]
 
     try:
         await hass.async_add_executor_job(
@@ -63,6 +66,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Unload OpenAI Agent."""
     openai.api_key = None
+    openai.api_base = DEFAULT_BASE_URL
     conversation.async_unset_agent(hass, entry)
     return True
 
