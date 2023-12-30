@@ -1,6 +1,6 @@
 """Constants for the OpenAI Control integration."""
 
-DOMAIN = "openai_control"
+DOMAIN = "openai_control_2"
 
 ENTITY_TEMPLATE = """$id<>$name<>$status<>$action
 """
